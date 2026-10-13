@@ -440,6 +440,17 @@ Reachability preconditions:
   per-user API rate limit, so a compromised or over-eager token cannot
   multiply provider spend past a second, independent ceiling.
   *(documented)* (source: :ref:`api-producer`, :doc:`/admin/config`)
+  Its project decision and quality-list endpoints return identifiers,
+  hashes, classifications, and applicability only: source, target,
+  candidate, prompt, and judge-evidence text stay in Weblate. The bounded
+  quality recheck endpoint accepts only accessible units in the named
+  project and refuses a stale revision before recomputing checks. Applying
+  a result remains a separate operation protected by both
+  ``translation.auto`` and ``unit.review`` and by the candidate verification,
+  approval, terminology, and revision guards described above. An external
+  orchestrator therefore cannot turn a read-only quality report into an
+  unrestricted unit-write primitive. *(documented)* (source:
+  :ref:`api-producer`)
 * Judge verdicts, producer runs (including cost estimates and applied
   candidate receipts), and the durable per-application undo record are
   retained without an automatic expiry; only high-volume transport

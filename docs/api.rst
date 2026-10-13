@@ -3774,6 +3774,54 @@ or an undo receipt disappears on its own.
     :statuscode 200: an identical prior resume request's run was returned unchanged
     :statuscode 409: the run is not in a resumable state, or the MT configuration drifted (``code: not-resumable`` or ``code: estimate-drift``)
 
+.. http:get:: /api/producer/projects/(string:slug)/decisions/
+
+    List the text-free, per-unit decisions of one completed or running judge
+    run. The caller supplies ``kind=judge`` and the run UUID. Each paginated
+    row identifies the unit and its opaque revision, reports the run outcome,
+    severity, parsed/missing state of both judge seats, disagreement and issue
+    categories, and names a stored candidate only when one exists. The
+    ``applicability`` field is one of ``ready``, ``no_candidate``, ``stale``,
+    ``not_verified``, ``needs_individual_confirmation``, or ``forbidden``.
+    Source, target, candidate, prompt, and evidence text are deliberately not
+    returned.
+
+    :param slug: Project URL slug
+    :type slug: string
+    :query string kind: Run kind; only ``judge`` is accepted
+    :query string run: Producer run UUID belonging to this project
+
+.. http:get:: /api/producer/projects/(string:slug)/quality/issues/
+
+    Return active exact-repeat and glossary issues for one project language as
+    structured, text-free groups. ``kind`` is a comma-separated subset of
+    ``repeat-drift,glossary``. Targets are represented by hashes and unit IDs;
+    each unit carries an opaque revision. ``hard`` and ``advisory`` distinguish
+    mandatory glossary conflicts from inflectable recommendations, while an
+    approved repeat conflict is explicitly ineligible for automatic repair.
+
+    :param slug: Project URL slug
+    :type slug: string
+    :query string language: Target language code
+    :query string kind: ``repeat-drift``, ``glossary``, or both
+    :>json string snapshot_hash: Hash of the complete ordered issue response
+    :>json array issues: Structured repeat/glossary groups without translation text
+
+.. http:post:: /api/producer/projects/(string:slug)/quality/recheck/
+
+    Recompute normal Weblate checks for a bounded list of project units. Each
+    input row contains ``unit_id`` and the last observed opaque ``revision``.
+    Rows are independent: a missing, inaccessible, or stale unit does not stop
+    the others. A successful row returns ``rechecked``, its new revision, and
+    the active check IDs. This endpoint changes check results only; it never
+    writes a translation or calls a provider.
+
+    :param slug: Project URL slug
+    :type slug: string
+    :<json array items: ``[{unit_id: int, revision: string}]``
+    :>json string snapshot_hash: Hash of the complete ordered result
+    :>json array items: Per-row ``rechecked``, ``stale``, ``forbidden``, or ``missing`` outcome
+
 .. http:post:: /api/producer/decisions/(int:id)/apply-candidate/
 
     Apply one already-verified judge repair candidate to its unit. The
@@ -3818,7 +3866,8 @@ or an undo receipt disappears on its own.
     :<json array items: ``[{unit: int, revision: string, candidate_id: int}]``
 
     The response body is a bare JSON array with one object per input row,
-    in the same order: ``[{unit: int, outcome: string}]``, where
+    in the same order: ``[{unit: int, outcome: string, revision: string,
+    application_id: int|null}]``, where
     ``outcome`` is one of ``applied``, ``already_applied``, ``stale``,
     ``forbidden``, ``needs_individual_confirmation``, ``not_verified``.
 

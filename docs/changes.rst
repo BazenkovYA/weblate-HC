@@ -7,6 +7,7 @@ Weblate 2026.8.1
 
 .. rubric:: New features
 
+* The producer console API can now expose text-free, run-scoped decisions from both LLM judge seats, report structured repeat and glossary issues, and recheck an explicit revision-guarded unit list, enabling an external wizard to complete a guarded repair cycle without direct translation writes.
 * Project administrators can rename a key or move a source string in flat JSON components without recreating its translations or metadata; both operations are previewed, audited, and write the resulting source order to the component files.
 
 * Added an optional :ref:`LLM judge <llm-judge>` automatic translation mode, where two independently configured language models review each string in a filter and record a per-string verdict; a rejected string is held in the existing :guilabel:`Needs editing` queue for a human decision instead of shipping automatically.
