@@ -24,18 +24,22 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import GenericAPIView, ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from weblate.api.pagination import StandardPagination
+from weblate.api.producer.quality import project_judge_decision
 from weblate.api.producer.serializers import (
     ProducerApplyCandidateRequestSerializer,
     ProducerBulkApplyRequestSerializer,
     ProducerBulkApplyResultSerializer,
     ProducerClarificationRequestSerializer,
     ProducerClarificationSerializer,
+    ProducerDecisionListRequestSerializer,
     ProducerDecisionSerializer,
+    ProducerJudgeDecisionSerializer,
     ProducerJudgeEstimateRequestSerializer,
     ProducerJudgeEstimateSerializer,
     ProducerMeSerializer,
@@ -65,6 +69,7 @@ from weblate.trans.models.judge import (
     JudgeApplicationUndoError,
     JudgeCandidateError,
     JudgeCandidateMetadata,
+    JudgeRunUnit,
     JudgeVerdict,
     ProducerRun,
     UnitClarification,
@@ -435,6 +440,42 @@ class ProducerRunDetail(APIView):
     @extend_schema(responses=ProducerRunSerializer)
     def get(self, request: Request, pk) -> Response:
         return Response(ProducerRunSerializer(self._get_run(pk)).data)
+
+
+class ProducerProjectDecisions(GenericAPIView):
+    """List one project's text-free, run-scoped judge decisions."""
+
+    permission_classes = (IsAuthenticated,)
+    serializer_class = ProducerJudgeDecisionSerializer
+    pagination_class = StandardPagination
+    request: AuthenticatedRequest  # type: ignore[assignment]
+
+    @extend_schema(
+        parameters=[ProducerDecisionListRequestSerializer],
+        responses=ProducerJudgeDecisionSerializer(many=True),
+    )
+    def get(self, request: Request, slug: str) -> Response:
+        filters = ProducerDecisionListRequestSerializer(data=request.query_params)
+        filters.is_valid(raise_exception=True)
+        project = get_object_or_404(self.request.user.allowed_projects, slug=slug)
+        run = get_object_or_404(
+            ProducerRun,
+            pk=filters.validated_data["run"],
+            requested_mode=filters.validated_data["kind"],
+            scope_type=ProducerRun.ScopeType.PROJECT,
+            scope_id=str(project.pk),
+        )
+        if not user_can_view_producer_run(self.request.user, project, run):
+            raise Http404
+        queryset = (
+            JudgeRunUnit.objects.filter(run=run, project_id=project.pk)
+            .select_related("unit", "unit__translation", "verdict")
+            .order_by("pk")
+        )
+        page = self.paginate_queryset(queryset)
+        rows = [project_judge_decision(item, self.request.user) for item in page]
+        serializer = self.get_serializer(rows, many=True)
+        return self.get_paginated_response(serializer.data)
 
 
 class ProducerRunCancel(ProducerRunDetail):

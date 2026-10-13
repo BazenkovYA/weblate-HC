@@ -91,6 +91,46 @@ class ProducerRunSerializer(serializers.Serializer):
         return None
 
 
+class ProducerDecisionListRequestSerializer(serializers.Serializer):
+    """Filters for the project-scoped producer decision queue."""
+
+    kind = serializers.ChoiceField(choices=PRODUCER_RUN_KIND_CHOICES)
+    run = serializers.UUIDField()
+
+
+class ProducerJudgeDecisionSerializer(serializers.Serializer):
+    """One text-free judge decision with every safe-apply guard exposed."""
+
+    unit_id = serializers.IntegerField(read_only=True)
+    run_unit_outcome = serializers.CharField(read_only=True)
+    severity = serializers.CharField(read_only=True)
+    seat_results = serializers.DictField(
+        child=serializers.ChoiceField(choices=("parsed", "unparsed", "missing")),
+        read_only=True,
+    )
+    disagreement = serializers.BooleanField(read_only=True)
+    issue_categories = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+    candidate_id = serializers.IntegerField(read_only=True, allow_null=True)
+    candidate_verified = serializers.BooleanField(read_only=True)
+    approval_loss = serializers.BooleanField(read_only=True)
+    terminology_conflict = serializers.BooleanField(read_only=True)
+    generation_outcome = serializers.CharField(read_only=True)
+    applicability = serializers.ChoiceField(
+        choices=(
+            "ready",
+            "no_candidate",
+            "not_verified",
+            "stale",
+            "needs_individual_confirmation",
+            "forbidden",
+        ),
+        read_only=True,
+    )
+    revision = serializers.CharField(read_only=True)
+
+
 class ProducerJudgeEstimateRequestSerializer(serializers.Serializer):
     """A read-only judge estimate for a closed project scope."""
 

@@ -17875,6 +17875,164 @@ class ProducerAPITest(APIBaseTest):
         self.assertEqual(detail.data["coverage"]["recorded"], 0)
         self.assertFalse(detail.data["coverage"]["scope_complete"])
 
+    def _make_project_judge_decision(self, *, complete_candidate: bool = True):
+        self.component.project.translation_review = True
+        self.component.project.save(update_fields=["translation_review"])
+        translation = self.component.translation_set.get(language_code="cs")
+        unit = translation.unit_set.get(source="Hello, world!\n")
+        unit.translate(self.user, ["Ahoj světe!\n"], STATE_TRANSLATED)
+        request = build_request(unit)
+        context_hash = compute_context_hash(
+            source=request.source,
+            note=request.note,
+            explanation=request.explanation,
+            glossary_terms=request.glossary_terms,
+        )
+        target_hash = compute_target_hash(unit.get_target_plurals())
+        run = ProducerRun.objects.create(
+            actor=self.user,
+            scope_type=ProducerRun.ScopeType.PROJECT,
+            scope_id=str(self.component.project.pk),
+            scope_label=str(self.component.project),
+            scope_path=self.component.project.get_absolute_url(),
+            requested_mode="judge",
+            cap=1,
+            status=ProducerRun.Status.COMPLETED,
+            scope_snapshot=[unit.pk],
+            execution_version=1,
+            scope_cursor=1,
+        )
+        live = [
+            JudgeVerdict.objects.create(
+                unit=unit,
+                run_id=run.pk,
+                seat=seat,
+                judge_model=f"vendor-{seat}/model",
+                model_verdict=JudgeVerdict.Verdict.FLAG,
+                max_severity=JudgeVerdict.Severity.MAJOR,
+                errors=[
+                    {
+                        "span": "Ahoj",
+                        "category": "meaning",
+                        "severity": "major",
+                        "description": "Meaning needs repair.",
+                    }
+                ],
+                target_hash=target_hash,
+                target_storage_hash=compute_target_storage_hash(unit.target),
+                context_hash=context_hash,
+            )
+            for seat in JUDGE_SEATS
+        ]
+        run_unit = JudgeRunUnit.objects.create(
+            run=run,
+            unit=unit,
+            unit_id_snapshot=unit.pk,
+            translation_id=translation.pk,
+            component_id=self.component.pk,
+            project_id=self.component.project.pk,
+            input_target=unit.get_target_plurals(),
+            input_target_hash=target_hash,
+            context_hash=context_hash,
+            verdict=live[0],
+            outcome=JudgeRunUnit.Outcome.MAJOR,
+            initial_severity=JudgeVerdict.Severity.MAJOR,
+            final_severity=JudgeVerdict.Severity.MAJOR,
+            attempt_count=1,
+            before_target=unit.get_target_plurals(),
+            after_target=unit.get_target_plurals(),
+        )
+        candidate, _ = Suggestion.objects.add(
+            unit,
+            ["Zdravím světe!\n"],
+            request=None,
+            vote=False,
+            raise_exception=False,
+            userdetails={
+                "kind": "judge-repair",
+                "schema": 1,
+                "judge_verdict_id": live[0].pk,
+                "judge_run_id": str(run.pk),
+                "target_hash": target_hash,
+                "context_hash": context_hash,
+                "engine": "openrouter",
+            },
+        )
+        candidate_hash = compute_target_hash(candidate.target_list)
+        seats = JUDGE_SEATS if complete_candidate else JUDGE_SEATS[:1]
+        for seat in seats:
+            JudgeVerdict.objects.create(
+                unit=unit,
+                subject=JudgeVerdict.Subject.CANDIDATE,
+                candidate_target_hash=candidate_hash,
+                target_hash=candidate_hash,
+                context_hash=context_hash,
+                run_id=run.pk,
+                attempt=1,
+                seat=seat,
+                judge_model=f"candidate-{seat}/model",
+                model_verdict=JudgeVerdict.Verdict.PASS,
+                max_severity=JudgeVerdict.Severity.NONE,
+            )
+        run_unit.candidate_target_hash = candidate_hash
+        run_unit.candidate_verdict_ids = list(
+            JudgeVerdict.objects.filter(
+                unit=unit,
+                subject=JudgeVerdict.Subject.CANDIDATE,
+                candidate_target_hash=candidate_hash,
+            ).values_list("pk", flat=True)
+        )
+        run_unit.repair_status = JudgeRunUnit.RepairStatus.CANDIDATE_STORED
+        run_unit.save(
+            update_fields=[
+                "candidate_target_hash",
+                "candidate_verdict_ids",
+                "repair_status",
+            ]
+        )
+        return run, unit, candidate
+
+    @override_settings(JUDGE_ENABLED=True)
+    def test_project_judge_decisions_list_exposes_safe_apply_guards(self) -> None:
+        run, unit, candidate = self._make_project_judge_decision()
+
+        response = self.do_request(
+            "api:producer-project-decisions",
+            kwargs={"slug": self.component.project.slug},
+            request={"kind": "judge", "run": str(run.pk)},
+            superuser=True,
+        )
+
+        self.assertEqual(response.data["count"], 1)
+        decision = response.data["results"][0]
+        self.assertEqual(decision["unit_id"], unit.pk)
+        self.assertEqual(decision["candidate_id"], candidate.pk)
+        self.assertTrue(decision["candidate_verified"])
+        self.assertEqual(decision["seat_results"], {"1": "parsed", "2": "parsed"})
+        self.assertEqual(decision["applicability"], "ready")
+        self.assertEqual(decision["revision"], compute_decision_revision(unit))
+        self.assertNotIn("target", decision)
+        self.assertNotIn("source", decision)
+
+    @override_settings(JUDGE_ENABLED=True)
+    def test_project_judge_decisions_never_marks_one_seat_candidate_ready(self) -> None:
+        run, _unit, candidate = self._make_project_judge_decision(
+            complete_candidate=False
+        )
+
+        response = self.do_request(
+            "api:producer-project-decisions",
+            kwargs={"slug": self.component.project.slug},
+            request={"kind": "judge", "run": str(run.pk)},
+            superuser=True,
+        )
+
+        decision = response.data["results"][0]
+        self.assertEqual(decision["candidate_id"], candidate.pk)
+        self.assertFalse(decision["candidate_verified"])
+        self.assertEqual(decision["seat_results"], {"1": "parsed", "2": "missing"})
+        self.assertEqual(decision["applicability"], "not_verified")
+
     @override_settings(
         JUDGE_ENABLED=True,
         JUDGE_API_KEY="sk-test-no-real-provider",

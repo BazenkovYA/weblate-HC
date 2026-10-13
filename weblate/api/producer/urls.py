@@ -9,6 +9,7 @@ from django.urls import path
 from weblate.api.producer.views import (
     ProducerJudgeApplicationUndo,
     ProducerMe,
+    ProducerProjectDecisions,
     ProducerProjectDecisionsApply,
     ProducerProjectJudgeEstimate,
     ProducerProjectRunStart,
@@ -48,6 +49,11 @@ urlpatterns = [
         "decisions/<int:pk>/apply-candidate/",
         ProducerUnitApplyCandidate.as_view(),
         name="producer-decision-apply-candidate",
+    ),
+    path(
+        "projects/<slug:slug>/decisions/",
+        ProducerProjectDecisions.as_view(),
+        name="producer-project-decisions",
     ),
     path(
         "projects/<slug:slug>/decisions/apply/",
