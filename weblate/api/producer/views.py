@@ -30,7 +30,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from weblate.api.pagination import StandardPagination
-from weblate.api.producer.quality import project_judge_decision
+from weblate.api.producer.quality import (
+    project_judge_decision,
+    project_quality_issues,
+    quality_recheck_snapshot,
+)
 from weblate.api.producer.serializers import (
     ProducerApplyCandidateRequestSerializer,
     ProducerBulkApplyRequestSerializer,
@@ -44,6 +48,10 @@ from weblate.api.producer.serializers import (
     ProducerJudgeEstimateSerializer,
     ProducerMeSerializer,
     ProducerProjectSummarySerializer,
+    ProducerQualityIssueFilterSerializer,
+    ProducerQualityIssueListSerializer,
+    ProducerQualityRecheckRequestSerializer,
+    ProducerQualityRecheckResultSerializer,
     ProducerRunResumeRequestSerializer,
     ProducerRunSerializer,
     ProducerRunStartRequestSerializer,
@@ -476,6 +484,109 @@ class ProducerProjectDecisions(GenericAPIView):
         rows = [project_judge_decision(item, self.request.user) for item in page]
         serializer = self.get_serializer(rows, many=True)
         return self.get_paginated_response(serializer.data)
+
+
+class ProducerProjectQualityIssues(APIView):
+    """Read active repeat and glossary issues as stable structured groups."""
+
+    permission_classes = (IsAuthenticated,)
+    request: AuthenticatedRequest  # type: ignore[assignment]
+
+    @extend_schema(
+        parameters=[ProducerQualityIssueFilterSerializer],
+        responses=ProducerQualityIssueListSerializer,
+    )
+    def get(self, request: Request, slug: str) -> Response:
+        filters = ProducerQualityIssueFilterSerializer(data=request.query_params)
+        filters.is_valid(raise_exception=True)
+        project = get_object_or_404(self.request.user.allowed_projects, slug=slug)
+        payload = project_quality_issues(
+            project=project,
+            language=filters.validated_data["language"],
+            kinds=filters.validated_data["kind"],
+            user=self.request.user,
+        )
+        return Response(ProducerQualityIssueListSerializer(payload).data)
+
+
+class ProducerProjectQualityRecheck(APIView):
+    """Recompute checks for a closed unit list without changing translations."""
+
+    permission_classes = (IsAuthenticated,)
+    request: AuthenticatedRequest  # type: ignore[assignment]
+
+    @extend_schema(
+        request=ProducerQualityRecheckRequestSerializer,
+        responses=ProducerQualityRecheckResultSerializer,
+    )
+    def post(self, request: Request, slug: str) -> Response:
+        serializer = ProducerQualityRecheckRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        project = get_object_or_404(self.request.user.allowed_projects, slug=slug)
+        requested = serializer.validated_data["items"]
+        units = {
+            unit.pk: unit
+            for unit in Unit.objects.filter_access(self.request.user)
+            .filter(
+                pk__in=[item["unit_id"] for item in requested],
+                translation__component__project=project,
+            )
+            .select_related("translation", "translation__component")
+        }
+        results = []
+        for item in requested:
+            unit = units.get(item["unit_id"])
+            if unit is None:
+                results.append(
+                    {
+                        "unit_id": item["unit_id"],
+                        "outcome": "missing",
+                        "revision": "",
+                        "checks": [],
+                    }
+                )
+                continue
+            revision = compute_decision_revision(unit)
+            if revision != item["revision"]:
+                results.append(
+                    {
+                        "unit_id": unit.pk,
+                        "outcome": "stale",
+                        "revision": revision,
+                        "checks": unit.failing_check_names,
+                    }
+                )
+                continue
+            permission = (
+                "glossary.edit"
+                if unit.translation.component.is_glossary
+                else "unit.edit"
+            )
+            if not self.request.user.has_perm(permission, unit):
+                results.append(
+                    {
+                        "unit_id": unit.pk,
+                        "outcome": "forbidden",
+                        "revision": revision,
+                        "checks": unit.failing_check_names,
+                    }
+                )
+                continue
+            unit.run_checks()
+            unit.refresh_from_db()
+            results.append(
+                {
+                    "unit_id": unit.pk,
+                    "outcome": "rechecked",
+                    "revision": compute_decision_revision(unit),
+                    "checks": unit.failing_check_names,
+                }
+            )
+        payload = {
+            "snapshot_hash": quality_recheck_snapshot(results),
+            "items": results,
+        }
+        return Response(ProducerQualityRecheckResultSerializer(payload).data)
 
 
 class ProducerRunCancel(ProducerRunDetail):

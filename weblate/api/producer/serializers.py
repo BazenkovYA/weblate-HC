@@ -131,6 +131,75 @@ class ProducerJudgeDecisionSerializer(serializers.Serializer):
     revision = serializers.CharField(read_only=True)
 
 
+class ProducerQualityIssueFilterSerializer(serializers.Serializer):
+    """Closed filters for repeat and glossary quality issues."""
+
+    language = serializers.CharField()
+    kind = serializers.CharField()
+
+    def validate_kind(self, value: str) -> list[str]:
+        kinds = [item.strip() for item in value.split(",") if item.strip()]
+        if not kinds or set(kinds) - {"repeat-drift", "glossary"}:
+            msg = "kind must contain repeat-drift and/or glossary"
+            raise serializers.ValidationError(msg)
+        return kinds
+
+
+class ProducerQualityIssueSerializer(serializers.Serializer):
+    """A text-free consistency group derived from Weblate checks."""
+
+    group_id = serializers.CharField(read_only=True)
+    kind = serializers.ChoiceField(choices=("repeat-drift", "glossary"), read_only=True)
+    hard = serializers.BooleanField(read_only=True)
+    advisory = serializers.BooleanField(read_only=True)
+    unit_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    revisions = serializers.DictField(child=serializers.CharField(), read_only=True)
+    variants = serializers.ListField(child=serializers.JSONField(), read_only=True)
+    term_mode = serializers.CharField(read_only=True)
+    approved_conflict = serializers.BooleanField(read_only=True)
+    auto_repair_eligible = serializers.BooleanField(read_only=True)
+
+
+class ProducerQualityIssueListSerializer(serializers.Serializer):
+    """Stable snapshot of every requested consistency issue."""
+
+    snapshot_hash = serializers.CharField(read_only=True)
+    issues = ProducerQualityIssueSerializer(many=True, read_only=True)
+
+
+class ProducerQualityRecheckItemSerializer(serializers.Serializer):
+    unit_id = serializers.IntegerField()
+    revision = serializers.CharField()
+
+
+class ProducerQualityRecheckRequestSerializer(serializers.Serializer):
+    items = ProducerQualityRecheckItemSerializer(many=True, allow_empty=False)
+
+    def validate_items(self, value: list[dict]) -> list[dict]:
+        unit_ids = [item["unit_id"] for item in value]
+        if len(unit_ids) != len(set(unit_ids)):
+            msg = "unit_id values must be unique"
+            raise serializers.ValidationError(msg)
+        if len(unit_ids) > 1000:
+            msg = "at most 1000 units can be rechecked"
+            raise serializers.ValidationError(msg)
+        return value
+
+
+class ProducerQualityRecheckResultItemSerializer(serializers.Serializer):
+    unit_id = serializers.IntegerField(read_only=True)
+    outcome = serializers.ChoiceField(
+        choices=("rechecked", "stale", "forbidden", "missing"), read_only=True
+    )
+    revision = serializers.CharField(read_only=True)
+    checks = serializers.ListField(child=serializers.CharField(), read_only=True)
+
+
+class ProducerQualityRecheckResultSerializer(serializers.Serializer):
+    snapshot_hash = serializers.CharField(read_only=True)
+    items = ProducerQualityRecheckResultItemSerializer(many=True, read_only=True)
+
+
 class ProducerJudgeEstimateRequestSerializer(serializers.Serializer):
     """A read-only judge estimate for a closed project scope."""
 

@@ -18033,6 +18033,56 @@ class ProducerAPITest(APIBaseTest):
         self.assertEqual(decision["seat_results"], {"1": "parsed", "2": "missing"})
         self.assertEqual(decision["applicability"], "not_verified")
 
+    def test_project_quality_issues_exposes_structured_glossary_issue(self) -> None:
+        translation = self.component.translation_set.get(language_code="cs")
+        unit = translation.unit_set.get(source="Hello, world!\n")
+        Check.objects.create(unit=unit, name="check_glossary")
+
+        response = self.do_request(
+            "api:producer-project-quality-issues",
+            kwargs={"slug": self.component.project.slug},
+            request={"language": "cs", "kind": "glossary"},
+            superuser=True,
+        )
+
+        self.assertEqual(len(response.data["issues"]), 1)
+        issue = response.data["issues"][0]
+        self.assertEqual(issue["kind"], "glossary")
+        self.assertEqual(issue["unit_ids"], [unit.pk])
+        self.assertEqual(
+            issue["revisions"], {str(unit.pk): compute_decision_revision(unit)}
+        )
+        self.assertNotIn("source", issue)
+        self.assertNotIn("target", issue)
+        self.assertEqual(len(response.data["snapshot_hash"]), 64)
+
+    def test_project_quality_recheck_continues_after_stale_item(self) -> None:
+        translation = self.component.translation_set.get(language_code="cs")
+        units = list(translation.unit_set.order_by("pk")[:2])
+        valid_revision = compute_decision_revision(units[1])
+
+        with patch.object(Unit, "run_checks") as run_checks:
+            response = self.do_request(
+                "api:producer-project-quality-recheck",
+                kwargs={"slug": self.component.project.slug},
+                method="post",
+                request={
+                    "items": [
+                        {"unit_id": units[0].pk, "revision": "stale"},
+                        {"unit_id": units[1].pk, "revision": valid_revision},
+                    ]
+                },
+                format="json",
+                superuser=True,
+            )
+
+        self.assertEqual(
+            [item["outcome"] for item in response.data["items"]],
+            ["stale", "rechecked"],
+        )
+        run_checks.assert_called_once_with()
+        self.assertEqual(len(response.data["snapshot_hash"]), 64)
+
     @override_settings(
         JUDGE_ENABLED=True,
         JUDGE_API_KEY="sk-test-no-real-provider",

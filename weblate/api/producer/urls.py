@@ -12,6 +12,8 @@ from weblate.api.producer.views import (
     ProducerProjectDecisions,
     ProducerProjectDecisionsApply,
     ProducerProjectJudgeEstimate,
+    ProducerProjectQualityIssues,
+    ProducerProjectQualityRecheck,
     ProducerProjectRunStart,
     ProducerProjects,
     ProducerRunCancel,
@@ -25,6 +27,16 @@ urlpatterns = [
     path("me/", ProducerMe.as_view(), name="producer-me"),
     path("projects/", ProducerProjects.as_view(), name="producer-projects"),
     path("runs/<uuid:pk>/", ProducerRunDetail.as_view(), name="producer-run-detail"),
+    path(
+        "projects/<slug:slug>/quality/issues/",
+        ProducerProjectQualityIssues.as_view(),
+        name="producer-project-quality-issues",
+    ),
+    path(
+        "projects/<slug:slug>/quality/recheck/",
+        ProducerProjectQualityRecheck.as_view(),
+        name="producer-project-quality-recheck",
+    ),
     path(
         "projects/<slug:slug>/runs/estimate/",
         ProducerProjectJudgeEstimate.as_view(),
