@@ -10,20 +10,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
 > `subagent-driven-development` (рекомендуется) либо `executing-plans` и
 > выполнять задачи по порядку с проверкой каждого шага.
 
-**Дата:** 2026-10-13.  
+**Дата:** 2026-10-13.
 **Статус:** предложен, ожидает утверждения; код и работающие экземпляры не
-изменялись.  
+изменялись.
 **Цель:** после перевода loc-kit FastAPI-визард автоматически проводит
 детерминированные проверки, коллегиальную проверку двумя судьями, поиск
 терминологических и повторных расхождений, безопасный ремонт и повторную
 проверку. Ошибка отдельной строки или внешнего вызова не останавливает весь
-проект.  
+проект.
 **Архитектура:** FastAPI-визард остаётся владельцем сквозного workflow, а
 Weblate — единственным владельцем переводов, проверок, judge evidence,
 repair-кандидатов и audited-записи. Визард не реализует второй judge engine и
-не пишет `Unit.target` напрямую.  
+не пишет `Unit.target` напрямую.
 **Технологии:** FastAPI, SQLAlchemy/Alembic, httpx, React/TypeScript, Weblate
-REST Producer API, Celery, PostgreSQL/SQLite в зависимости от среды.  
+REST Producer API, Celery, PostgreSQL/SQLite в зависимости от среды.
 **Связанные документы:**
 `docs/product/plans/2026-09-15-judge-glossary-conflict-and-api-history.md`,
 `docs/product/plans/2026-09-17-judge-full-scope-continuation.md`,
