@@ -17777,7 +17777,11 @@ class ProducerAPITest(APIBaseTest):
         response = self.do_request("api:producer-me")
         self.assertEqual(
             response.data["capabilities"],
-            {"judge": False, "glossary_profile_analysis": False},
+            {
+                "judge": False,
+                "judge_seats": 0,
+                "glossary_profile_analysis": False,
+            },
         )
 
     @override_settings(
@@ -17791,7 +17795,11 @@ class ProducerAPITest(APIBaseTest):
         response = self.do_request("api:producer-me")
         self.assertEqual(
             response.data["capabilities"],
-            {"judge": True, "glossary_profile_analysis": True},
+            {
+                "judge": True,
+                "judge_seats": 2,
+                "glossary_profile_analysis": True,
+            },
         )
 
     def test_projects_require_authentication(self) -> None:

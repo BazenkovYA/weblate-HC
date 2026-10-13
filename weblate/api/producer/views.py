@@ -65,7 +65,11 @@ from weblate.api.throttling import (
 from weblate.machinery.base import MACHINERY_DEFAULT_THRESHOLD
 from weblate.trans.autotranslate import BatchAutoTranslate, PreparationScope
 from weblate.trans.forms import configured_routed_engine
-from weblate.trans.judge import judge_configuration_ready, judge_configuration_snapshot
+from weblate.trans.judge import (
+    JUDGE_SEATS,
+    judge_configuration_ready,
+    judge_configuration_snapshot,
+)
 from weblate.trans.judge_loop import (
     DEFAULT_CANDIDATE_SEVERITIES,
     accept_judge_candidate,
@@ -120,7 +124,8 @@ class ProducerMe(APIView):
             "full_name": user.full_name,
             "is_superuser": user.is_superuser,
             "capabilities": {
-                "judge": judge_configuration_ready(),
+                "judge": (judge_ready := judge_configuration_ready()),
+                "judge_seats": len(JUDGE_SEATS) if judge_ready else 0,
                 "glossary_profile_analysis": (
                     settings.LOC_KIT_PROFILE_ANALYSIS_ENABLED
                 ),

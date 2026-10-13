@@ -36,6 +36,10 @@ class ProducerCapabilitiesSerializer(serializers.Serializer):
     judge = serializers.BooleanField(
         help_text="Whether the LLM judge is configured and usable."
     )
+    judge_seats = serializers.IntegerField(
+        min_value=0,
+        help_text="Number of independently configured judge seats.",
+    )
     glossary_profile_analysis = serializers.BooleanField(
         help_text="Whether loc-kit glossary profile analysis is enabled."
     )
