@@ -819,11 +819,11 @@ class ProducerProjectDecisionsApply(APIView):
                 pk=unit_id, translation__component__project=project
             )
         except Unit.DoesNotExist:
-            return {"unit": unit_id, "outcome": "forbidden"}
+            return self._bulk_result(unit_id, "forbidden")
         if not self.request.user.has_perm(
             "unit.review", unit
         ) or not self.request.user.has_perm("translation.auto", unit.translation):
-            return {"unit": unit_id, "outcome": "forbidden"}
+            return self._bulk_result(unit_id, "forbidden")
         # Candidate existence is checked before revision staleness: a
         # completed apply always advances the revision too, so a retry
         # (or a losing side of a concurrent apply race) must report the
@@ -832,20 +832,35 @@ class ProducerProjectDecisionsApply(APIView):
             pk=item["candidate_id"], unit=unit
         ).first()
         if candidate is None:
-            return {"unit": unit_id, "outcome": "already_applied"}
+            return self._bulk_result(unit_id, "already_applied", unit)
         if compute_decision_revision(unit) != item["revision"]:
-            return {"unit": unit_id, "outcome": "stale"}
+            return self._bulk_result(unit_id, "stale", unit)
         if self._needs_individual_confirmation(unit, candidate):
-            return {"unit": unit_id, "outcome": "needs_individual_confirmation"}
+            return self._bulk_result(unit_id, "needs_individual_confirmation", unit)
         try:
-            accept_judge_candidate(candidate, self.request)
+            application = accept_judge_candidate(candidate, self.request)
         except JudgeCandidateError:
             if not Suggestion.objects.filter(pk=candidate.pk).exists():
                 # Lost a race to a concurrent apply of the same candidate,
                 # not a validation failure.
-                return {"unit": unit_id, "outcome": "already_applied"}
-            return {"unit": unit_id, "outcome": "not_verified"}
-        return {"unit": unit_id, "outcome": "applied"}
+                return self._bulk_result(unit_id, "already_applied", unit)
+            return self._bulk_result(unit_id, "not_verified", unit)
+        unit.refresh_from_db()
+        return self._bulk_result(unit_id, "applied", unit, application.pk)
+
+    @staticmethod
+    def _bulk_result(
+        unit_id: int,
+        outcome: str,
+        unit: Unit | None = None,
+        application_id: int | None = None,
+    ) -> dict:
+        return {
+            "unit": unit_id,
+            "outcome": outcome,
+            "revision": compute_decision_revision(unit) if unit is not None else "",
+            "application_id": application_id,
+        }
 
     @staticmethod
     def _needs_individual_confirmation(unit: Unit, candidate: Suggestion) -> bool:

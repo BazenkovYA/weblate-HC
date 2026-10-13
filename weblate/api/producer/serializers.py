@@ -323,6 +323,8 @@ class ProducerBulkApplyResultSerializer(serializers.Serializer):
             "not_verified",
         )
     )
+    revision = serializers.CharField(allow_blank=True)
+    application_id = serializers.IntegerField(allow_null=True)
 
 
 class ProducerClarificationSerializer(serializers.Serializer):

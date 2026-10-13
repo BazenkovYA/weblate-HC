@@ -14306,6 +14306,11 @@ class SuggestionAPITest(APIBaseTest):
         self.assertIn((approved_unit.pk, "needs_individual_confirmation"), outcomes)
         self.assertIn((stale_unit.pk, "stale"), outcomes)
         self.assertIn((900010, "forbidden"), outcomes)
+        applied_result = next(
+            row for row in response.data if row["unit"] == applied_unit.pk
+        )
+        self.assertTrue(applied_result["revision"])
+        self.assertIsNotNone(applied_result["application_id"])
         applied_unit.refresh_from_db()
         approved_unit.refresh_from_db()
         self.assertEqual(applied_unit.state, STATE_TRANSLATED)
